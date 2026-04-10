@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Hypothesis database
+.hypothesis/
+
+# pytest cache
+.pytest_cache/
+
+# Generated client configs
+*.ovpn
+
+# Secrets (never commit these)
+/etc/southvpn/
+service_account.json
