@@ -51,7 +51,7 @@ def _make_sa_file(tmp_path) -> str:
 # ── Property: drive_update never crashes on arbitrary config content ──────────
 
 @given(st.binary(max_size=4096))
-@settings(max_examples=1000, suppress_health_check=[HealthCheck.too_slow])
+@settings(max_examples=1000, suppress_health_check=[HealthCheck.too_slow, HealthCheck.function_scoped_fixture])
 def test_drive_update_never_crashes_on_arbitrary_config(tmp_path, raw_config: bytes):
     """drive_update() must handle any config file content without crashing."""
     sa_file = _make_sa_file(tmp_path)
@@ -76,7 +76,7 @@ def test_drive_update_never_crashes_on_arbitrary_config(tmp_path, raw_config: by
 
 
 @given(st.text(max_size=1024))
-@settings(max_examples=500)
+@settings(max_examples=500, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_drive_update_never_crashes_on_arbitrary_text_config(tmp_path, config_text: str):
     """drive_update() must handle any text config file without crashing."""
     sa_file = _make_sa_file(tmp_path)
@@ -105,7 +105,7 @@ def test_drive_update_never_crashes_on_arbitrary_text_config(tmp_path, config_te
         max_size=128,
     )
 )
-@settings(max_examples=500)
+@settings(max_examples=500, suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_file_id_never_causes_path_traversal(tmp_path, file_id: str):
     """
     Verify that a crafted file_id value in gdrive_config.ini does not cause
@@ -162,8 +162,8 @@ def test_configparser_never_crashes_on_arbitrary_bytes(raw: bytes):
         name = f.name
     try:
         cfg = configparser.ConfigParser()
-        cfg.read(name)  # Should either succeed or raise configparser.Error
-    except configparser.Error:
+        cfg.read(name, encoding="utf-8")  # Should either succeed or raise configparser.Error
+    except (configparser.Error, UnicodeDecodeError):
         pass  # Expected for malformed input
     except Exception as exc:
         pytest.fail(f"Unexpected exception from configparser: {type(exc).__name__}: {exc}")

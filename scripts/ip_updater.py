@@ -135,10 +135,10 @@ def drive_update(ip: str) -> None:
         print("[Drive] Skipped: gdrive_config.ini not found.")
         return
 
-    config = configparser.ConfigParser()
+    config = configparser.RawConfigParser()  # RawConfigParser avoids % interpolation errors
     try:
-        config.read(CONFIG_FILE)
-    except configparser.Error as exc:
+        config.read(CONFIG_FILE, encoding="utf-8")
+    except (configparser.Error, UnicodeDecodeError) as exc:
         print(f"[Drive] Skipped: malformed gdrive_config.ini: {exc}")
         return
 

@@ -15,10 +15,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
-LOCAL_IP_FILE="/var/lib/southvpn/current_ip.txt"
-CA_CERT="/etc/openvpn/server/ca.crt"
-TA_KEY="/etc/openvpn/server/ta.key"
-TEMPLATE="${REPO_DIR}/client/client.conf.template"
+# Allow env var overrides for testing; production defaults otherwise.
+LOCAL_IP_FILE="${LOCAL_IP_FILE:-/var/lib/southvpn/current_ip.txt}"
+CA_CERT="${CA_CERT:-/etc/openvpn/server/ca.crt}"
+TA_KEY="${TA_KEY:-/etc/openvpn/server/ta.key}"
+TEMPLATE="${TEMPLATE:-${REPO_DIR}/client/client.conf.template}"
 
 # ── Must run as root (reads /etc/openvpn/server/ta.key, mode 600) ─────────────
 if [[ "$(id -u)" -ne 0 ]]; then
