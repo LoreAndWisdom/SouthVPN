@@ -1,0 +1,49 @@
+port 1194
+proto udp
+dev tun
+
+# PKI
+ca   /etc/openvpn/server/ca.crt
+cert /etc/openvpn/server/server.crt
+key  /etc/openvpn/server/server.key
+
+# TLS pre-auth (key direction 0 = server)
+tls-auth /etc/openvpn/server/ta.key 0
+
+# VPN subnet
+server 10.8.0.0 255.255.255.0
+ifconfig-pool-persist /var/log/openvpn/ipp.txt
+
+# Push routes to clients
+push "redirect-gateway def1 bypass-dhcp"
+push "dhcp-option DNS 1.1.1.1"
+push "dhcp-option DNS 8.8.8.8"
+
+keepalive 10 120
+
+# Crypto — AES-256-GCM with ECDH key exchange
+cipher AES-256-GCM
+data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305
+auth SHA256
+tls-version-min 1.2
+tls-cipher TLS-ECDHE-ECDSA-WITH-AES-256-GCM-SHA384:TLS-ECDHE-RSA-WITH-AES-256-GCM-SHA384
+
+# Drop privileges after startup
+user nobody
+group nogroup
+persist-key
+persist-tun
+
+# Authentication via PAM (username + password + TOTP)
+# __PLUGIN_PATH__ is replaced by 03_configure_openvpn.sh
+plugin __PLUGIN_PATH__ openvpn
+verify-client-cert none
+username-as-common-name
+
+# Per-user config directory (optional static IPs etc.)
+client-config-dir /etc/openvpn/server/ccd
+
+# Logging
+status /var/log/openvpn/openvpn-status.log
+log-append /var/log/openvpn/openvpn.log
+verb 3

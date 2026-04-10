@@ -1,0 +1,15 @@
+[Unit]
+Description=Run SouthVPN IP Updater every 5 minutes
+Documentation=https://github.com/loreandwisdom/southvpn
+
+[Timer]
+# Fire 60 seconds after boot (give network time to come up)
+OnBootSec=60
+# Then fire every 5 minutes
+OnUnitActiveSec=5min
+AccuracySec=30s
+# If the system was off during a scheduled run, fire immediately on next boot
+Persistent=true
+
+[Install]
+WantedBy=timers.target

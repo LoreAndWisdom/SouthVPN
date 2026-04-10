@@ -1,0 +1,39 @@
+client
+dev tun
+proto udp
+remote __SERVER_IP__ 1194
+resolv-retry infinite
+nobind
+
+persist-key
+persist-tun
+
+# Verify server certificate is signed by our CA
+remote-cert-tls server
+
+# Must match server cipher configuration
+cipher AES-256-GCM
+data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305
+auth SHA256
+tls-version-min 1.2
+
+# key-direction 1 pairs with the server's 'tls-auth ... 0'
+key-direction 1
+
+verb 3
+
+# Prompt for username + password
+auth-user-pass
+
+# 'static-challenge' shows a separate OTP field in the client GUI.
+# The '1' means the OTP input is masked (not echoed).
+# OpenVPN passes the combined credential to PAM as "password\nOTP".
+static-challenge "Enter Google Authenticator OTP:" 1
+
+<ca>
+__CA_CERT__
+</ca>
+
+<tls-auth>
+__TA_KEY__
+</tls-auth>

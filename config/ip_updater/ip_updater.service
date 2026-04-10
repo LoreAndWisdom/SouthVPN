@@ -1,0 +1,12 @@
+[Unit]
+Description=SouthVPN Public IP Updater
+Documentation=https://github.com/loreandwisdom/southvpn
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 /usr/local/bin/southvpn-ip-updater.py
+StandardOutput=journal
+StandardError=journal
