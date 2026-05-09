@@ -2,15 +2,17 @@ port 1194
 proto udp
 dev tun
 
-# PKI
+# PKI — ECDH (prime256v1), no DH file needed
 ca   /etc/openvpn/server/ca.crt
 cert /etc/openvpn/server/server.crt
 key  /etc/openvpn/server/server.key
+dh   none
 
 # TLS pre-auth (key direction 0 = server)
 tls-auth /etc/openvpn/server/ta.key 0
 
 # VPN subnet
+topology subnet
 server 10.8.0.0 255.255.255.0
 ifconfig-pool-persist /var/log/openvpn/ipp.txt
 
