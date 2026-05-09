@@ -20,7 +20,12 @@ export DEBIAN_FRONTEND=noninteractive
 export UCF_FORCE_CONFFOLD=1
 
 echo "Updating package index..."
-apt-get update -qq
+# Allow update to fail for third-party repos (expired keys, unsigned repos).
+# SouthVPN packages come from the main Ubuntu/Debian repos which are always signed.
+apt-get update -qq || {
+    echo "[WARN] apt-get update reported errors (likely third-party repos)."
+    echo "       Continuing — SouthVPN packages are from the main Ubuntu repos."
+}
 
 echo "Installing packages: ${PACKAGES[*]}"
 apt-get install -y --no-install-recommends "${PACKAGES[@]}"
