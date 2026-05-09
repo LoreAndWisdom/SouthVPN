@@ -68,43 +68,53 @@ if [[ ! "$USERNAME" =~ ^[a-z][a-z0-9_-]*$ ]]; then
     exit 1
 fi
 
-# ── Check user doesn't already exist ─────────────────────────────────────────
+# ── Check if user already exists ─────────────────────────────────────────────
+USER_EXISTS=false
 if id "$USERNAME" &>/dev/null; then
-    echo "ERROR: User '${USERNAME}' already exists." >&2
-    echo "       To re-enroll, run: sudo bash scripts/remove_user.sh ${USERNAME} --delete" >&2
-    exit 1
+    USER_EXISTS=true
+    echo "NOTE: System user '${USERNAME}' already exists — skipping creation and password steps."
+    echo "      Only the TOTP secret will be (re)generated."
+    echo ""
 fi
 
 echo "Enrolling user: ${USERNAME}"
 echo ""
 
-# ── [1/4] Create Linux system user ───────────────────────────────────────────
-useradd --system --shell /usr/sbin/nologin --no-create-home "$USERNAME"
-echo "[1/4] System user '${USERNAME}' created (no login shell, no home directory)."
-
-# ── [2/4] Set password ────────────────────────────────────────────────────────
-if [[ -z "$PASSWORD" ]]; then
-    while true; do
-        read -rsp "Enter VPN password for ${USERNAME}: " PASSWORD
-        echo
-        read -rsp "Confirm password: " PASSWORD2
-        echo
-        if [[ "$PASSWORD" == "$PASSWORD2" ]]; then
-            break
-        fi
-        echo "Passwords do not match. Try again."
-    done
+# ── [1/4] Create Linux system user (skipped if user exists) ──────────────────
+if [[ "$USER_EXISTS" == "false" ]]; then
+    useradd --system --shell /usr/sbin/nologin --no-create-home "$USERNAME"
+    echo "[1/4] System user '${USERNAME}' created (no login shell, no home directory)."
+else
+    echo "[1/4] Skipped — user '${USERNAME}' already exists."
 fi
 
-if [[ -z "$PASSWORD" ]]; then
-    echo "ERROR: Password cannot be empty." >&2
-    userdel "$USERNAME" 2>/dev/null || true
-    exit 1
-fi
+# ── [2/4] Set password (skipped if user exists) ───────────────────────────────
+if [[ "$USER_EXISTS" == "false" ]]; then
+    if [[ -z "$PASSWORD" ]]; then
+        while true; do
+            read -rsp "Enter VPN password for ${USERNAME}: " PASSWORD
+            echo
+            read -rsp "Confirm password: " PASSWORD2
+            echo
+            if [[ "$PASSWORD" == "$PASSWORD2" ]]; then
+                break
+            fi
+            echo "Passwords do not match. Try again."
+        done
+    fi
 
-echo "${USERNAME}:${PASSWORD}" | chpasswd
-unset PASSWORD PASSWORD2
-echo "[2/4] Password set."
+    if [[ -z "$PASSWORD" ]]; then
+        echo "ERROR: Password cannot be empty." >&2
+        userdel "$USERNAME" 2>/dev/null || true
+        exit 1
+    fi
+
+    echo "${USERNAME}:${PASSWORD}" | chpasswd
+    unset PASSWORD PASSWORD2
+    echo "[2/4] Password set."
+else
+    echo "[2/4] Skipped — password unchanged for existing user '${USERNAME}'."
+fi
 
 # ── [3/4] Create TOTP secret directory ───────────────────────────────────────
 # The directory must be owned by 'nobody' because OpenVPN drops privileges to
