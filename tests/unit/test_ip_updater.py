@@ -202,25 +202,28 @@ class TestDriveUpdate:
 
 class TestMain:
     def test_no_write_when_ip_unchanged(self, tmp_path):
-        """main() must not call write_local_ip when the IP hasn't changed."""
+        """main() must not call write_local_ip or drive_update when the IP hasn't changed."""
         ip_file = str(tmp_path / "current_ip.txt")
         with patch.object(ip_updater, "LOCAL_IP_FILE", ip_file), \
              patch.object(ip_updater, "SERVICE_ACCOUNT_FILE", str(tmp_path / "sa.json")), \
-             patch("urllib.request.urlopen") as mock_open:
+             patch("urllib.request.urlopen") as mock_open, \
+             patch.object(ip_updater, "drive_update") as mock_drive:
             mock_resp = MagicMock()
             mock_resp.__enter__ = MagicMock(return_value=mock_resp)
             mock_resp.__exit__ = MagicMock(return_value=False)
             mock_resp.read = MagicMock(return_value=b"1.2.3.4")
             mock_open.return_value = mock_resp
 
-            # First call: write the IP
+            # First call: IP is new → write file and call drive_update
             ip_updater.main()
             mtime1 = os.stat(ip_file).st_mtime
+            assert mock_drive.call_count == 1, "drive_update should be called on first run"
             time.sleep(0.05)
 
-            # Second call: IP unchanged, file must NOT be rewritten
+            # Second call: IP unchanged → no write, no Drive call
             ip_updater.main()
             mtime2 = os.stat(ip_file).st_mtime
+            assert mock_drive.call_count == 1, "drive_update must not be called when IP unchanged"
 
         assert mtime1 == mtime2, "File was rewritten despite IP being unchanged"
 

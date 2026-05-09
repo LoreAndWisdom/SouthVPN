@@ -170,8 +170,10 @@ def drive_update(ip: str) -> None:
         print(f"[Drive] Updated file {file_id} with IP: {ip}")
 
     except Exception as exc:
+        # Drive is optional — log the error but do not exit with a failure code.
+        # A transient network issue or misconfiguration should not mark the
+        # systemd service as failed and trigger noisy restart loops.
         print(f"[Drive] ERROR: {exc}", file=sys.stderr)
-        sys.exit(1)
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
@@ -185,11 +187,11 @@ def main() -> None:
     old_ip = read_local_ip()
     if ip == old_ip:
         print(f"[LOCAL] IP unchanged: {ip}")
-    else:
-        if old_ip:
-            print(f"[LOCAL] IP changed: {old_ip} -> {ip}")
-        write_local_ip(ip)
+        return  # Nothing to do — skip Drive update too
 
+    if old_ip:
+        print(f"[LOCAL] IP changed: {old_ip} -> {ip}")
+    write_local_ip(ip)
     drive_update(ip)
 
 
