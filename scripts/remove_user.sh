@@ -21,7 +21,11 @@ fi
 
 # ── Must NOT be called from within a VPN session ─────────────────────────────
 if [[ -n "${SSH_CLIENT:-}" ]]; then
-    client_ip=$(echo "$SSH_CLIENT" | awk '{print $1}')
+    client_ip=$(awk '{print $1}' <<< "$SSH_CLIENT")
+    if [[ -z "$client_ip" ]]; then
+        echo "ERROR: Cannot determine client IP from SSH_CLIENT — refusing to proceed." >&2
+        exit 1
+    fi
     if [[ "$client_ip" == "${VPN_SUBNET_PREFIX}"* ]]; then
         echo "ERROR: User management cannot be performed over a VPN connection." >&2
         echo "       Source IP ${client_ip} is in the VPN subnet." >&2
@@ -75,9 +79,12 @@ else
     echo "[3/3] System user kept (locked). Use --delete to fully remove."
 fi
 
-# ── Audit log ─────────────────────────────────────────────────────────────────
+# ── Audit log (root-only readable) ────────────────────────────────────────────
 OPERATOR=$(logname 2>/dev/null || echo "unknown")
 TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+touch "$LOG_FILE"
+chmod 640 "$LOG_FILE"
+chown root:root "$LOG_FILE"
 echo "${TS} REMOVED user=${USERNAME} deleted=${DELETE_USER} by=${OPERATOR}" >> "$LOG_FILE"
 
 echo ""

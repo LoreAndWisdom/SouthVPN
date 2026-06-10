@@ -17,6 +17,7 @@ import configparser
 import json
 import os
 import re
+import ssl
 import sys
 import urllib.request
 from datetime import datetime, timezone
@@ -57,13 +58,18 @@ def parse_ip_response(raw_bytes: bytes) -> "str | None":
 
 def fetch_public_ip() -> "str | None":
     """Try each IP source in order; return the first valid IPv4 address."""
+    # Explicit strict TLS: hostname check + certificate verification required.
+    tls_context = ssl.create_default_context()
+    tls_context.check_hostname = True
+    tls_context.verify_mode = ssl.CERT_REQUIRED
+
     for url in IP_SOURCES:
         try:
             req = urllib.request.Request(
                 url,
                 headers={"User-Agent": "SouthVPN-IPUpdater/1.0"},
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10, context=tls_context) as resp:
                 raw = resp.read(64)
                 ip = parse_ip_response(raw)
                 if ip:
@@ -173,7 +179,9 @@ def drive_update(ip: str) -> None:
         # Drive is optional — log the error but do not exit with a failure code.
         # A transient network issue or misconfiguration should not mark the
         # systemd service as failed and trigger noisy restart loops.
-        print(f"[Drive] ERROR: {exc}", file=sys.stderr)
+        # Log only type + truncated message: API errors can embed request
+        # details that don't belong in logs.
+        print(f"[Drive] ERROR: {type(exc).__name__}: {str(exc)[:200]}", file=sys.stderr)
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
@@ -195,5 +203,5 @@ def main() -> None:
     drive_update(ip)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()

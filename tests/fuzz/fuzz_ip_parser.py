@@ -28,17 +28,11 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../scripts"))
 from ip_updater import IPV4_RE, parse_ip_response  # noqa: E402
 
-try:
-    from hypothesis import given, settings, HealthCheck
-    from hypothesis import strategies as st
-    HAS_HYPOTHESIS = True
-except ImportError:
-    HAS_HYPOTHESIS = False
-
-pytestmark = pytest.mark.skipif(
-    not HAS_HYPOTHESIS,
-    reason="hypothesis not installed — run: pip install hypothesis",
-)
+# Skip the whole file at collection time if hypothesis is missing —
+# module-level @given decorators would otherwise raise NameError.
+pytest.importorskip("hypothesis", reason="hypothesis not installed — run: pip install hypothesis")
+from hypothesis import given, settings, HealthCheck  # noqa: E402
+from hypothesis import strategies as st  # noqa: E402
 
 
 # ── Property: parse_ip_response never raises ──────────────────────────────────

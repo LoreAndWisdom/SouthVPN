@@ -16,6 +16,7 @@
 #      → share it with the service account email (Editor permission)
 
 set -euo pipefail
+umask 0077  # the key copy must never be group/world readable, even transiently
 
 CONFIG_DIR="/etc/southvpn"
 SA_FILE="${CONFIG_DIR}/service_account.json"
@@ -65,29 +66,31 @@ while true; do
         continue
     fi
 
-    # Validate it looks like a service account JSON
-    if ! python3 -c "
-import json, sys
+    # Validate it looks like a service account JSON.
+    # KEY_PATH is passed via environment, never interpolated into Python code.
+    if ! KEY_PATH="$KEY_PATH" python3 - << 'PYEOF' 2>/dev/null
+import json, os, sys
 try:
-    d = json.load(open('${KEY_PATH}'))
-    if d.get('type') != 'service_account':
+    d = json.load(open(os.environ["KEY_PATH"]))
+    if d.get("type") != "service_account":
         sys.exit(1)
-    print('Service account email:', d.get('client_email', '(unknown)'))
+    print("Service account email:", d.get("client_email", "(unknown)"))
 except Exception as e:
-    print('ERROR:', e, file=sys.stderr)
+    print("ERROR:", e, file=sys.stderr)
     sys.exit(1)
-" 2>/dev/null; then
+PYEOF
+    then
         echo -e "${RED}This does not look like a valid service account key.${NC}"
         echo "Make sure you downloaded the JSON key (not a p12 or OAuth token)."
         echo "The file should contain: \"type\": \"service_account\""
-        python3 -c "
-import json
+        KEY_PATH="$KEY_PATH" python3 - << 'PYEOF'
+import json, os
 try:
-    d = json.load(open('${KEY_PATH}'))
-    print('  File type field:', repr(d.get('type', '(missing)')))
+    d = json.load(open(os.environ["KEY_PATH"]))
+    print("  File type field:", repr(d.get("type", "(missing)")))
 except Exception as e:
-    print('  Parse error:', e)
-"
+    print("  Parse error:", e)
+PYEOF
         continue
     fi
 

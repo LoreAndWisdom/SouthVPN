@@ -11,9 +11,11 @@
 #   sudo bash scripts/add_user.sh <username> --password <password>
 
 set -euo pipefail
+umask 0077  # any file we create defaults to owner-only access
 
 AUTH_DIR="/etc/openvpn/server/auth"
 VPN_SUBNET_PREFIX="10.8.0."
+MIN_PASSWORD_LENGTH=12
 
 # ── Must run as root ──────────────────────────────────────────────────────────
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -24,7 +26,11 @@ fi
 
 # ── Must NOT be called from within a VPN session ─────────────────────────────
 if [[ -n "${SSH_CLIENT:-}" ]]; then
-    client_ip=$(echo "$SSH_CLIENT" | awk '{print $1}')
+    client_ip=$(awk '{print $1}' <<< "$SSH_CLIENT")
+    if [[ -z "$client_ip" ]]; then
+        echo "ERROR: Cannot determine client IP from SSH_CLIENT — refusing to proceed." >&2
+        exit 1
+    fi
     if [[ "$client_ip" == "${VPN_SUBNET_PREFIX}"* ]]; then
         echo "ERROR: User enrollment cannot be performed over a VPN connection." >&2
         echo "       Source IP ${client_ip} is in the VPN subnet." >&2
@@ -108,8 +114,14 @@ if [[ "$USER_EXISTS" == "false" ]]; then
         userdel "$USERNAME" 2>/dev/null || true
         exit 1
     fi
+    if [[ ${#PASSWORD} -lt $MIN_PASSWORD_LENGTH ]]; then
+        echo "ERROR: Password too short (minimum ${MIN_PASSWORD_LENGTH} characters)." >&2
+        userdel "$USERNAME" 2>/dev/null || true
+        exit 1
+    fi
 
-    echo "${USERNAME}:${PASSWORD}" | chpasswd
+    # printf (not echo): immune to backslash interpretation and leading-dash args
+    printf '%s:%s\n' "$USERNAME" "$PASSWORD" | chpasswd
     unset PASSWORD PASSWORD2
     echo "[2/4] Password set."
 else

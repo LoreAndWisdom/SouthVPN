@@ -10,3 +10,22 @@ User=root
 ExecStart=/usr/bin/python3 /usr/local/bin/southvpn-ip-updater.py
 StandardOutput=journal
 StandardError=journal
+
+# ── Sandboxing ────────────────────────────────────────────────────────────────
+# The updater only needs: HTTPS out, read /etc/southvpn, write /var/lib/southvpn.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/southvpn
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=

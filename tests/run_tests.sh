@@ -21,11 +21,13 @@ run_suite() {
     echo "══════════════════════════════════════════"
     echo "  ${name}"
     echo "══════════════════════════════════════════"
+    # Note: $((...)) assignment, not ((var++)) — the latter returns exit
+    # status 1 when the variable is 0, which kills the script under set -e.
     if "$@"; then
-        ((PASS_SUITES++))
+        PASS_SUITES=$((PASS_SUITES + 1))
         echo "  ✓ ${name}: PASSED"
     else
-        ((FAIL_SUITES++))
+        FAIL_SUITES=$((FAIL_SUITES + 1))
         echo "  ✗ ${name}: FAILED"
     fi
 }
@@ -34,7 +36,7 @@ run_suite() {
 echo "Checking dependencies..."
 MISSING_DEPS=()
 command -v python3 &>/dev/null || MISSING_DEPS+=("python3")
-command -v pytest  &>/dev/null || MISSING_DEPS+=("pytest (pip install pytest)")
+python3 -m pytest --version &>/dev/null || MISSING_DEPS+=("pytest (pip install pytest)")
 
 if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
     echo "ERROR: Missing dependencies: ${MISSING_DEPS[*]}" >&2
@@ -45,21 +47,24 @@ cd "$REPO_DIR"
 
 # ── Unit tests (no root, no network) ─────────────────────────────────────────
 run_suite "Unit: ip_updater.py" \
-    pytest tests/unit/test_ip_updater.py -v
+    python3 -m pytest tests/unit/test_ip_updater.py tests/unit/test_ip_updater_drive.py -v
 
 run_suite "Unit: gen_client_config.sh" \
-    pytest tests/unit/test_gen_client_config.py -v
+    python3 -m pytest tests/unit/test_gen_client_config.py -v
 
 # ── Fuzz / property-based tests (no root, no network) ────────────────────────
 run_suite "Fuzz: IP parser" \
-    pytest tests/fuzz/fuzz_ip_parser.py -v
+    python3 -m pytest tests/fuzz/fuzz_ip_parser.py -v
 
 run_suite "Fuzz: config parser" \
-    pytest tests/fuzz/fuzz_config_parser.py -v
+    python3 -m pytest tests/fuzz/fuzz_config_parser.py -v
 
-# ── TOTP security test (no root, no network) ──────────────────────────────────
+# ── Security tests (no root, no network) ──────────────────────────────────────
 run_suite "Security: TOTP replay prevention" \
-    pytest tests/security/test_totp_replay.py -v
+    python3 -m pytest tests/security/test_totp_replay.py -v
+
+run_suite "Security: hardening regressions" \
+    python3 -m pytest tests/security/test_hardening.py -v
 
 # ── Integration + security tests (require root) ───────────────────────────────
 if [[ "$RUN_ALL" == "true" ]]; then

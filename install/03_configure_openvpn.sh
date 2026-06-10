@@ -13,16 +13,21 @@ case "$ARCH" in
     aarch64) PLUGIN_PATH="/usr/lib/aarch64-linux-gnu/openvpn/plugins/openvpn-plugin-auth-pam.so" ;;
     armv7l)  PLUGIN_PATH="/usr/lib/arm-linux-gnueabihf/openvpn/plugins/openvpn-plugin-auth-pam.so" ;;
     *)
-        echo "WARNING: Unknown architecture '${ARCH}', defaulting to x86_64 plugin path." >&2
-        PLUGIN_PATH="/usr/lib/x86_64-linux-gnu/openvpn/plugins/openvpn-plugin-auth-pam.so"
+        PLUGIN_PATH=""
         ;;
 esac
 
-if [[ ! -f "$PLUGIN_PATH" ]]; then
-    echo "ERROR: PAM plugin not found at ${PLUGIN_PATH}." >&2
-    echo "       Install openvpn package and verify the architecture." >&2
+# Fall back to a filesystem search if the arch-specific path doesn't exist.
+if [[ -z "$PLUGIN_PATH" || ! -f "$PLUGIN_PATH" ]]; then
+    PLUGIN_PATH=$(find /usr/lib -name openvpn-plugin-auth-pam.so 2>/dev/null | head -1)
+fi
+
+if [[ -z "$PLUGIN_PATH" || ! -f "$PLUGIN_PATH" ]]; then
+    echo "ERROR: openvpn-plugin-auth-pam.so not found anywhere under /usr/lib." >&2
+    echo "       Install the openvpn package first." >&2
     exit 1
 fi
+echo "PAM plugin: ${PLUGIN_PATH}"
 
 # ── Write server.conf from template ──────────────────────────────────────────
 echo "Writing /etc/openvpn/server/server.conf..."

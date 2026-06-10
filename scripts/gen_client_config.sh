@@ -52,6 +52,13 @@ if [[ -z "$USERNAME" ]] || [[ ! "$USERNAME" =~ ^[a-z][a-z0-9_-]*$ ]] || [[ ${#US
     exit 1
 fi
 
+# ── Output directory validation ───────────────────────────────────────────────
+# Reject relative traversal; the .ovpn must land where the operator expects.
+if [[ "$OUTPUT_DIR" == *..* ]]; then
+    echo "ERROR: Output directory must not contain '..': ${OUTPUT_DIR}" >&2
+    exit 1
+fi
+
 # ── Resolve server IP ─────────────────────────────────────────────────────────
 if [[ -z "$SERVER_IP" ]]; then
     if [[ -f "$LOCAL_IP_FILE" ]]; then

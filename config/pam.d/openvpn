@@ -15,9 +15,17 @@
 #   - 'user=nobody' ensures the secret file is read as the OpenVPN process UID.
 #   - No 'nullok': users without a .google_authenticator file are always denied.
 
-auth    required    pam_unix.so    nodelay
-auth    required    pam_google_authenticator.so \
-                        secret=/etc/openvpn/server/auth/${USER}/.google_authenticator \
-                        user=nobody \
-                        forward_pass
-account required    pam_unix.so
+# Brute-force protection: lock the account for 10 minutes after 5 failures.
+# Control-flow: on success each factor skips the following authfail line;
+# on failure [default=die] records the failure and aborts immediately.
+auth    required                 pam_faillock.so    preauth silent audit deny=5 unlock_time=600
+auth    [success=1 default=bad]  pam_unix.so    nodelay
+auth    [default=die]            pam_faillock.so    authfail audit deny=5 unlock_time=600
+auth    [success=1 default=bad]  pam_google_authenticator.so \
+                                     secret=/etc/openvpn/server/auth/${USER}/.google_authenticator \
+                                     user=nobody \
+                                     forward_pass
+auth    [default=die]            pam_faillock.so    authfail audit deny=5 unlock_time=600
+auth    required                 pam_faillock.so    authsucc audit deny=5 unlock_time=600
+account required                 pam_faillock.so
+account required                 pam_unix.so

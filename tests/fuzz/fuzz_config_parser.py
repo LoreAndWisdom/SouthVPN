@@ -26,17 +26,11 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../scripts"))
 import ip_updater  # noqa: E402
 
-try:
-    from hypothesis import HealthCheck, given, settings
-    from hypothesis import strategies as st
-    HAS_HYPOTHESIS = True
-except ImportError:
-    HAS_HYPOTHESIS = False
-
-pytestmark = pytest.mark.skipif(
-    not HAS_HYPOTHESIS,
-    reason="hypothesis not installed — run: pip install hypothesis",
-)
+# Skip the whole file at collection time if hypothesis is missing —
+# module-level @given decorators would otherwise raise NameError.
+pytest.importorskip("hypothesis", reason="hypothesis not installed — run: pip install hypothesis")
+from hypothesis import HealthCheck, given, settings  # noqa: E402
+from hypothesis import strategies as st  # noqa: E402
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
