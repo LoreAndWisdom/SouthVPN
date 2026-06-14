@@ -4,9 +4,11 @@ A private VPN server for people without a static public IP and a spare machine a
 
 ## Features
 
-- **OpenVPN** server with username + password authentication
-- **MFA** via Google Authenticator (TOTP) — required for every connection
-- **Dynamic IP** support: automatically publishes the current public IP to a local file, with optional Google Drive sync so clients can always find the server
+- **OpenVPN** server with username + password + TOTP multi-factor authentication
+- **MFA** via Google Authenticator — required for every connection
+- **Dynamic IP** support: automatically detects the current public IP every 5 minutes
+- **Google Drive sync** (optional): publishes the IP to a Drive text file so clients can always find the server
+- **Auto .ovpn updates** (optional): regenerates and uploads per-user `.ovpn` configs to Drive whenever the IP changes — clients just re-download
 - **Easy setup**: single installer script, runs on Ubuntu 22.04 / Debian 11+
 - **User management**: simple scripts to add/remove users with full MFA enrollment
 
@@ -18,14 +20,18 @@ Client                          Server
 OpenVPN Connect   ─── UDP 1194 ──►  OpenVPN
   username                           │
   password              PAM ◄────────┘
-  OTP (Google Auth)      ├── pam_unix     (password check)
-                         └── pam_google_authenticator (TOTP check)
+  OTP (Google Auth)      ├── pam_unix               (password check)
+                         ├── pam_google_authenticator (TOTP check)
+                         └── pam_faillock            (brute-force lockout)
 ```
 
-The server detects its public IP every 5 minutes and writes it to
-`/var/lib/southvpn/current_ip.txt`.  If Google Drive sync is configured,
-the file is also kept updated on Drive so clients can always find the
-current address.
+Every 5 minutes the systemd timer runs the IP updater:
+
+```
+southvpn-ip-updater  ──► /var/lib/southvpn/current_ip.txt   (always)
+                     ──► Drive: southvpn_ip.txt              (if configured)
+                     ──► Drive: <user>.ovpn per user         (if configured)
+```
 
 ## Quick Start
 
@@ -37,30 +43,39 @@ sudo bash install/install_all.sh
 # Add a user
 sudo bash scripts/add_user.sh alice
 
-# Generate the client .ovpn config
+# Generate and distribute the client config
 sudo bash scripts/gen_client_config.sh alice /tmp/
-# → transfer /tmp/alice.ovpn to the user
+# → transfer /tmp/alice.ovpn to alice securely
 ```
 
-> **Security:** `add_user.sh` must be run directly on the server — it cannot
-> be executed from inside an active VPN session.
+> **Security:** `add_user.sh` must be run directly on the server (local
+> terminal or non-VPN SSH).  It cannot be executed from inside a VPN session.
+
+### Optional: Enable Google Drive sync
+
+```bash
+sudo bash scripts/setup_gdrive.sh
+```
+
+Interactive wizard — configure IP text file sync and/or automatic `.ovpn`
+upload to a Drive folder.  See [docs/INSTALL.md](docs/INSTALL.md#google-drive-setup-optional) for details.
 
 ## Project Structure
 
 ```
-install/        Installer scripts (run these once)
-config/         Config file templates (OpenVPN, PAM, systemd)
-scripts/        Operational scripts (user management, IP updater)
+install/        Installer scripts (run once)
+config/         Config templates (OpenVPN, PAM, systemd)
+scripts/        Operational scripts (user management, IP updater, Drive setup)
 client/         Client .ovpn template
 docs/           Documentation
-tests/          Test suite (unit, integration, security, fuzz)
+tests/          Test suite (unit, fuzz, security, integration)
 ```
 
 ## Documentation
 
 - [Installation Guide](docs/INSTALL.md)
 - [User Management](docs/USER_MANAGEMENT.md)
-- [Client Setup](docs/CLIENT_SETUP.md)
+- [Client Setup Guide](docs/CLIENT_SETUP.md)
 
 ## Testing
 
