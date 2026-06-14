@@ -87,7 +87,24 @@ sudo bash install/05_setup_ip_updater.sh
 
 ## After Installation
 
-### 1. Add your first VPN user
+At the end of the install, OpenVPN is **already running and enabled at boot**.
+You do not need to start it manually. Confirm with:
+
+```bash
+sudo systemctl status openvpn-server@server
+# Should show: Active: active (running)
+```
+
+See the [Managing the VPN Server](#managing-the-vpn-server) section below for
+start/stop/restart commands and log access.
+
+### 1. Configure your router
+
+Before clients can connect from outside your home network, you must forward
+UDP port 1194 to the server. See [Router Configuration](#router-configuration)
+below — do this before testing any client connections.
+
+### 2. Add your first VPN user
 
 ```bash
 sudo bash scripts/add_user.sh alice
@@ -96,7 +113,7 @@ sudo bash scripts/add_user.sh alice
 > **Note:** This must be run directly on the server (local terminal or
 > non-VPN SSH). It cannot be run from inside a VPN session.
 
-### 2. Generate a client config
+### 3. Generate a client config
 
 ```bash
 sudo bash scripts/gen_client_config.sh alice /tmp/
@@ -106,14 +123,14 @@ Transfer `/tmp/alice.ovpn` to the user via a secure channel (encrypted email,
 Signal, USB stick, etc.). See [User Management](USER_MANAGEMENT.md) and
 [Client Setup](CLIENT_SETUP.md) for the full workflow.
 
-### 3. Verify the IP updater is working
+### 4. Verify the IP updater is working
 
 ```bash
 cat /var/lib/southvpn/current_ip.txt
 # IP: 203.0.113.42
 # Last updated: 2026-04-10T10:00:00Z
 
-journalctl -u southvpn-ip-updater.service --no-pager
+sudo journalctl -u southvpn-ip-updater.service --no-pager
 ```
 
 ---
@@ -244,30 +261,193 @@ sudo journalctl -u southvpn-ip-updater.service --no-pager
 
 ---
 
+## Managing the VPN Server
+
+### How OpenVPN is run
+
+SouthVPN runs as a systemd service named `openvpn-server@server`. The
+installer (Step 3) enables it so it **starts automatically on every boot**.
+
+```
+/etc/openvpn/server/server.conf   ← config written by installer
+/etc/pam.d/openvpn                ← PAM stack (password + TOTP)
+```
+
+### Common commands
+
+```bash
+# Check if OpenVPN is running right now
+sudo systemctl status openvpn-server@server
+
+# Start the server (needed only if it was stopped manually)
+sudo systemctl start openvpn-server@server
+
+# Stop the server
+sudo systemctl stop openvpn-server@server
+
+# Restart (e.g. after config changes or to kick out all connected clients)
+sudo systemctl restart openvpn-server@server
+
+# View recent logs (show last 50 lines)
+sudo journalctl -u openvpn-server@server -n 50 --no-pager
+
+# Follow logs in real time (useful when a client is connecting)
+sudo journalctl -u openvpn-server@server -f
+```
+
+### What healthy output looks like
+
+```
+$ sudo systemctl status openvpn-server@server
+● openvpn-server@server.service - OpenVPN service for server
+     Loaded: loaded (/lib/systemd/system/openvpn-server@.service; enabled)
+     Active: active (running) since ...
+```
+
+`Active: active (running)` with `enabled` in the Loaded line means OpenVPN is
+up and will restart automatically after a reboot.
+
+If the status shows `failed` or `inactive`, run:
+
+```bash
+sudo journalctl -u openvpn-server@server -n 30 --no-pager
+```
+
+Common causes and fixes:
+
+| Log message | Fix |
+|---|---|
+| `Cannot open TUN/TAP dev` | Reboot or run `sudo modprobe tun` |
+| `openvpn-plugin-auth-pam.so not found` | Re-run `sudo bash install/03_configure_openvpn.sh` |
+| `Cannot read key file` | Check `/etc/openvpn/server/` permissions |
+| `Options error: You must define DH` | Re-run `sudo bash install/03_configure_openvpn.sh` |
+
+---
+
 ## Router Configuration
 
-Forward UDP port **1194** on your router to the server's LAN IP address.
-The exact steps depend on your router model; look for "Port Forwarding" or
-"Virtual Server" in the admin panel.
+The server listens on **UDP port 1194**. Because it sits behind your home
+router (NAT), the router must forward incoming connections on that port to
+the server's LAN IP address. Without this, clients on the internet cannot
+reach the VPN.
+
+### Step 1 — Find the server's LAN IP
+
+Run this on the server:
+
+```bash
+ip addr show | grep 'inet ' | grep -v '127.0.0.1'
+# Example output:
+#   inet 192.168.1.42/24 brd 192.168.1.255 scope global eth0
+```
+
+Or more concisely:
+
+```bash
+hostname -I | awk '{print $1}'
+# Example: 192.168.1.42
+```
+
+Note this address — you'll need it for the port forwarding rule.
+
+### Step 2 — Reserve that LAN IP (important)
+
+By default, home routers assign LAN IPs via DHCP, so your server's LAN IP
+could change after a reboot. If that happens, the port forwarding rule breaks
+and clients can no longer connect.
+
+Fix this by creating a **DHCP reservation** (sometimes called a "static DHCP"
+or "address reservation") in your router's admin panel:
+
+1. Find the server's MAC address:
+   ```bash
+   ip link show | grep -A1 'eth0\|ens\|enp' | grep 'link/ether' | awk '{print $2}' | head -1
+   # Example: aa:bb:cc:dd:ee:ff
+   ```
+2. In the router admin panel, go to **DHCP** → **Address Reservation** (or
+   **Static Leases** in DD-WRT / OpenWRT)
+3. Add a reservation: bind the MAC address to the current LAN IP (e.g. `192.168.1.42`)
+4. Save and apply
+
+From this point on, the server always gets the same LAN IP on every boot.
+
+### Step 3 — Set up port forwarding
+
+Log in to your router's admin panel. The address is usually
+`http://192.168.1.1` or `http://192.168.0.1` — check the label on your router.
+
+Look for a section called **Port Forwarding**, **Virtual Server**, or
+**NAT** (exact name varies by router brand):
+
+| Router brand | Menu path |
+|---|---|
+| ASUS | **WAN → Virtual Server / Port Forwarding** |
+| Netgear | **Advanced → Advanced Setup → Port Forwarding / Port Triggering** |
+| TP-Link | **Advanced → NAT Forwarding → Virtual Servers** |
+| D-Link | **Advanced → Port Forwarding** |
+| Fritz!Box | **Internet → Permit Access → Port Sharing** |
+| DD-WRT | **NAT / QoS → Port Forwarding** |
+| OpenWRT | **Network → Firewall → Port Forwards** |
+
+Create a new port forwarding rule with these exact values:
+
+| Field | Value |
+|---|---|
+| Name / Description | `SouthVPN` (anything) |
+| Protocol | **UDP** |
+| External port (WAN) | **1194** |
+| Internal IP / Destination | The server's LAN IP (e.g. `192.168.1.42`) |
+| Internal port (LAN) | **1194** |
+
+Save and apply. Some routers require a reboot to activate the rule.
+
+### Step 4 — Verify the port is reachable from the internet
+
+From a device on a **different network** (e.g. mobile data), test that port
+1194/UDP is reachable. The easiest way is to attempt a VPN connection with a
+client; a successful tunnel confirms the port is open.
+
+Alternatively, from the server itself:
+
+```bash
+# Check the server is listening on 1194/UDP
+sudo ss -ulnp | grep 1194
+# Should show: udp  UNCONN  0  0  0.0.0.0:1194  ...  users:(("openvpn",...))
+```
+
+Then from an external machine (not on your LAN):
+
+```bash
+# Try to reach the port (requires netcat with UDP support)
+nc -zvu <public_ip> 1194
+```
+
+Or use an online UDP port checker (search "check UDP port open" — several free
+tools exist). Note that UDP port checks are less reliable than TCP; a failed
+result doesn't always mean the port is blocked. The definitive test is a
+successful VPN client connection.
 
 ---
 
 ## Verify Everything Works
 
 ```bash
-# Check OpenVPN is running
-systemctl status openvpn-server@server
+# OpenVPN running and enabled at boot?
+sudo systemctl status openvpn-server@server
 
-# Check the IP updater timer
+# Server listening on UDP 1194?
+sudo ss -ulnp | grep 1194
+
+# IP updater timer active?
 systemctl list-timers | grep southvpn
 
-# Check the current public IP
+# Current public IP recorded?
 cat /var/lib/southvpn/current_ip.txt
 
-# Check Drive sync (if configured)
-journalctl -u southvpn-ip-updater.service --no-pager
+# Drive sync logs (if configured)
+sudo journalctl -u southvpn-ip-updater.service --no-pager
 
-# Check firewall rules
+# Firewall rules (port 1194/UDP should be listed)
 sudo ufw status verbose
 ```
 
@@ -277,9 +457,10 @@ sudo ufw status verbose
 
 | Symptom | Check |
 |---|---|
-| OpenVPN fails to start | `journalctl -u openvpn-server@server` |
-| Client gets `AUTH_FAILED` | `journalctl -u openvpn-server@server` — check PAM errors |
-| IP file not updating | `journalctl -u southvpn-ip-updater.service` |
-| Drive IP sync not working | Check `service_account.json` and `file_id` in config; verify file is shared with SA email |
-| `.ovpn` not uploaded to Drive | Check `ovpn_folder_id` in config; verify folder is shared with SA email; check `/var/lib/southvpn/ovpn_file_ids.ini` |
-| Client cannot reach VPN | Verify port 1194/UDP is forwarded at the router |
+| OpenVPN fails to start | `sudo journalctl -u openvpn-server@server -n 30 --no-pager` |
+| Client gets `AUTH_FAILED` | Same log — look for PAM errors; verify username/password/TOTP |
+| Client times out / can't reach server | Verify port 1194/UDP forwarding at the router; check `sudo ufw status` |
+| IP file not updating | `sudo journalctl -u southvpn-ip-updater.service` |
+| Drive IP sync not working | Check `service_account.json` and `file_id` in config; verify file is shared with service account email |
+| `.ovpn` not uploaded to Drive | Check `ovpn_folder_id` in config; verify folder is shared with service account email; check `/var/lib/southvpn/ovpn_file_ids.ini` |
+| Server stops after reboot | `sudo systemctl enable openvpn-server@server` — re-enables autostart |
