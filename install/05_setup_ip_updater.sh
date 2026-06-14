@@ -12,6 +12,9 @@ install -m 755 "$REPO_DIR/scripts/ip_updater.py" /usr/local/bin/southvpn-ip-upda
 mkdir -p /etc/southvpn
 chmod 750 /etc/southvpn
 
+# Install the client config template used for .ovpn generation
+install -m 644 "$REPO_DIR/client/client.conf.template" /etc/southvpn/client.conf.template
+
 # ── State directory (readable by all: clients read the IP file) ───────────────
 mkdir -p /var/lib/southvpn
 chmod 755 /var/lib/southvpn
@@ -24,6 +27,8 @@ if [[ ! -f /etc/southvpn/gdrive_config.ini ]]; then
 # Leave empty to disable Drive sync.
 file_id =
 filename = southvpn_ip.txt
+# Google Drive folder ID for per-user .ovpn files (leave empty to disable)
+ovpn_folder_id =
 EOF
     chmod 640 /etc/southvpn/gdrive_config.ini
     echo "Created /etc/southvpn/gdrive_config.ini (Drive sync disabled by default)."

@@ -47,7 +47,7 @@ cd "$REPO_DIR"
 
 # ── Unit tests (no root, no network) ─────────────────────────────────────────
 run_suite "Unit: ip_updater.py" \
-    python3 -m pytest tests/unit/test_ip_updater.py tests/unit/test_ip_updater_drive.py -v
+    python3 -m pytest tests/unit/test_ip_updater.py tests/unit/test_ip_updater_drive.py tests/unit/test_ip_updater_ovpn.py -v
 
 run_suite "Unit: gen_client_config.sh" \
     python3 -m pytest tests/unit/test_gen_client_config.py -v

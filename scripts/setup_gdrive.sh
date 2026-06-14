@@ -44,6 +44,8 @@ echo "  1. A Google Cloud project with the Drive API enabled"
 echo "  2. A service account JSON key file downloaded to this machine"
 echo "  3. A plain-text file named 'southvpn_ip.txt' on Google Drive"
 echo "     shared with the service account email (Editor permission)"
+echo "  4. (Optional) A Google Drive folder for per-user .ovpn configs"
+echo "     shared with the service account email (Editor permission)"
 echo ""
 echo "Full instructions: docs/INSTALL.md → 'Google Drive Setup'"
 echo ""
@@ -51,7 +53,7 @@ read -rp "Press Enter to continue, or Ctrl+C to abort..."
 echo ""
 
 # ── Step 1: Service account JSON key ─────────────────────────────────────────
-echo -e "${BOLD}[Step 1/3] Service account JSON key${NC}"
+echo -e "${BOLD}[Step 1/4] Service account JSON key${NC}"
 echo ""
 echo "You downloaded a JSON key file when you created the service account."
 echo "Example filename: myproject-a1b2c3d4e5f6.json"
@@ -104,7 +106,7 @@ echo -e "${GREEN}✓ Key copied to ${SA_FILE}${NC}"
 echo ""
 
 # ── Step 2: Drive file ID ─────────────────────────────────────────────────────
-echo -e "${BOLD}[Step 2/3] Google Drive file ID${NC}"
+echo -e "${BOLD}[Step 2/4] Google Drive file ID (for southvpn_ip.txt)${NC}"
 echo ""
 echo "Open the 'southvpn_ip.txt' file in Google Drive and look at the URL:"
 echo ""
@@ -133,19 +135,58 @@ while true; do
     break
 done
 
-# Write the config file
+# ── Step 3: Drive folder for .ovpn files (optional) ──────────────────────────
+echo -e "${BOLD}[Step 3/4] Google Drive folder for .ovpn client configs (optional)${NC}"
+echo ""
+echo "When the server IP changes, SouthVPN can automatically regenerate each"
+echo "user's .ovpn file and upload it to a Google Drive folder."
+echo ""
+echo "To enable this feature:"
+echo "  a) Create a folder on Google Drive (e.g. 'SouthVPN Clients')"
+echo "  b) Share it with the service account email (Editor permission)"
+echo "  c) Copy the folder ID from the URL:"
+echo ""
+echo -e "     ${YELLOW}https://drive.google.com/drive/folders/${BOLD}<FOLDER_ID>${NC}"
+echo ""
+echo "Press Enter to skip this step and keep automatic .ovpn upload disabled."
+echo ""
+
+FOLDER_ID=""
+while true; do
+    read -rp "Paste the folder ID here (or press Enter to skip): " FOLDER_ID
+    FOLDER_ID="${FOLDER_ID// /}"  # strip accidental spaces
+
+    if [[ -z "$FOLDER_ID" ]]; then
+        echo "  (Skipped — .ovpn auto-upload disabled)"
+        break
+    fi
+
+    if [[ ! "$FOLDER_ID" =~ ^[A-Za-z0-9_-]+$ ]]; then
+        echo -e "${RED}That doesn't look like a valid folder ID (unexpected characters).${NC}"
+        echo "Copy only the ID portion from the URL, not the full URL."
+        continue
+    fi
+
+    echo -e "${GREEN}✓ Folder ID accepted.${NC}"
+    break
+done
+echo ""
+
+# Write the config file (both file_id and ovpn_folder_id)
 cat > "$CFG_FILE" << EOF
 [gdrive]
 # Google Drive file ID — do not change this line by hand, use setup_gdrive.sh
 file_id = ${FILE_ID}
 filename = southvpn_ip.txt
+# Google Drive folder ID for per-user .ovpn files (leave empty to disable)
+ovpn_folder_id = ${FOLDER_ID}
 EOF
 chmod 640 "$CFG_FILE"
-echo -e "${GREEN}✓ File ID saved to ${CFG_FILE}${NC}"
+echo -e "${GREEN}✓ Config saved to ${CFG_FILE}${NC}"
 echo ""
 
-# ── Step 3: Test sync ─────────────────────────────────────────────────────────
-echo -e "${BOLD}[Step 3/3] Test sync${NC}"
+# ── Step 4: Test sync ─────────────────────────────────────────────────────────
+echo -e "${BOLD}[Step 4/4] Test sync${NC}"
 echo ""
 echo "Running the IP updater now to verify the Drive connection..."
 echo ""

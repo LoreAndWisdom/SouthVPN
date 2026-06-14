@@ -8,6 +8,9 @@ Detects the current public IP address and:
   Level 2 (optional): syncs to Google Drive if /etc/southvpn/service_account.json
                       contains a valid service account key and gdrive_config.ini
                       has a file_id set.
+  Level 3 (optional): regenerates per-user .ovpn configs and uploads them to a
+                      Google Drive folder when the IP changes, if ovpn_folder_id
+                      is set in gdrive_config.ini.
 
 The script is designed to be called by the southvpn-ip-updater.service systemd
 unit.  All output is captured by journald.
@@ -26,6 +29,11 @@ from datetime import datetime, timezone
 LOCAL_IP_FILE = "/var/lib/southvpn/current_ip.txt"
 CONFIG_FILE = "/etc/southvpn/gdrive_config.ini"
 SERVICE_ACCOUNT_FILE = "/etc/southvpn/service_account.json"
+AUTH_DIR = "/etc/openvpn/server/auth"
+CA_CERT_FILE = "/etc/openvpn/server/ca.crt"
+TA_KEY_FILE = "/etc/openvpn/server/ta.key"
+CLIENT_TEMPLATE_FILE = "/etc/southvpn/client.conf.template"
+OVPN_FILE_IDS_FILE = "/var/lib/southvpn/ovpn_file_ids.ini"
 
 IP_SOURCES = [
     "https://api.ipify.org",
@@ -184,6 +192,165 @@ def drive_update(ip: str) -> None:
         print(f"[Drive] ERROR: {type(exc).__name__}: {str(exc)[:200]}", file=sys.stderr)
 
 
+# ── .ovpn config generation and Drive upload ──────────────────────────────────
+
+def _list_enrolled_users() -> list:
+    """Return sorted list of enrolled VPN usernames (directories in AUTH_DIR)."""
+    if not os.path.isdir(AUTH_DIR):
+        return []
+    return sorted(
+        name for name in os.listdir(AUTH_DIR)
+        if os.path.isdir(os.path.join(AUTH_DIR, name))
+        and re.match(r"^[a-z][a-z0-9_-]*$", name)
+    )
+
+
+def _build_ovpn(ip: str) -> "str | None":
+    """Build .ovpn file content for the given server IP. Returns None on error."""
+    try:
+        template = open(CLIENT_TEMPLATE_FILE).read()
+        ca_cert = open(CA_CERT_FILE).read().strip()
+        ta_key = open(TA_KEY_FILE).read().strip()
+    except OSError as exc:
+        print(f"[OVPN] Cannot read config files: {exc}", file=sys.stderr)
+        return None
+    result = template.replace("__SERVER_IP__", ip)
+    result = result.replace("__CA_CERT__", ca_cert)
+    result = result.replace("__TA_KEY__", ta_key)
+    return result
+
+
+def _read_ovpn_file_ids() -> dict:
+    """Return {username: drive_file_id} persisted from previous uploads."""
+    cfg = configparser.RawConfigParser()
+    try:
+        cfg.read(OVPN_FILE_IDS_FILE, encoding="utf-8")
+    except (configparser.Error, UnicodeDecodeError):
+        return {}
+    return dict(cfg.items("ovpn_file_ids")) if cfg.has_section("ovpn_file_ids") else {}
+
+
+def _write_ovpn_file_ids(file_ids: dict) -> None:
+    """Persist {username: drive_file_id} atomically to OVPN_FILE_IDS_FILE."""
+    cfg = configparser.RawConfigParser()
+    cfg["ovpn_file_ids"] = file_ids
+    os.makedirs(os.path.dirname(OVPN_FILE_IDS_FILE), exist_ok=True)
+    tmp = OVPN_FILE_IDS_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        cfg.write(f)
+    os.replace(tmp, OVPN_FILE_IDS_FILE)
+
+
+def ovpn_update(ip: str) -> None:
+    """Regenerate per-user .ovpn configs and upload to Google Drive when IP changes.
+
+    Silently skips if Drive is not configured or ovpn_folder_id is not set.
+    Per-user Drive file IDs are persisted in OVPN_FILE_IDS_FILE so subsequent
+    calls update the same file rather than creating duplicates.
+    """
+    # ── Check service account ─────────────────────────────────────────────────
+    if not os.path.exists(SERVICE_ACCOUNT_FILE):
+        print("[OVPN] Skipped: service_account.json not found.")
+        return
+
+    try:
+        with open(SERVICE_ACCOUNT_FILE) as f:
+            sa = json.load(f)
+        if sa.get("type") != "service_account":
+            print("[OVPN] Skipped: service_account.json is a placeholder.")
+            return
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"[OVPN] Skipped: cannot read service_account.json: {exc}")
+        return
+
+    # ── Read config ───────────────────────────────────────────────────────────
+    if not os.path.exists(CONFIG_FILE):
+        print("[OVPN] Skipped: gdrive_config.ini not found.")
+        return
+
+    config = configparser.RawConfigParser()
+    try:
+        config.read(CONFIG_FILE, encoding="utf-8")
+    except (configparser.Error, UnicodeDecodeError) as exc:
+        print(f"[OVPN] Skipped: malformed gdrive_config.ini: {exc}")
+        return
+
+    folder_id = config.get("gdrive", "ovpn_folder_id", fallback="").strip()
+    if not folder_id:
+        print("[OVPN] Skipped: ovpn_folder_id not set in gdrive_config.ini.")
+        return
+
+    # ── Build .ovpn content ───────────────────────────────────────────────────
+    ovpn_content = _build_ovpn(ip)
+    if ovpn_content is None:
+        return
+
+    # ── Find enrolled users ───────────────────────────────────────────────────
+    users = _list_enrolled_users()
+    if not users:
+        print("[OVPN] No enrolled users found.")
+        return
+
+    # ── Connect to Drive ──────────────────────────────────────────────────────
+    try:
+        from google.oauth2 import service_account  # type: ignore
+        from googleapiclient.discovery import build  # type: ignore
+        from googleapiclient.http import MediaInMemoryUpload  # type: ignore
+    except ImportError:
+        print("[OVPN] Skipped: google-api-python-client not installed.")
+        return
+
+    try:
+        creds = service_account.Credentials.from_service_account_file(
+            SERVICE_ACCOUNT_FILE,
+            scopes=["https://www.googleapis.com/auth/drive.file"],
+        )
+        service = build("drive", "v3", credentials=creds, cache_discovery=False)
+    except Exception as exc:
+        print(
+            f"[OVPN] ERROR building Drive service: {type(exc).__name__}: {str(exc)[:200]}",
+            file=sys.stderr,
+        )
+        return
+
+    # ── Upload per-user configs ───────────────────────────────────────────────
+    file_ids = _read_ovpn_file_ids()
+    updated_ids = dict(file_ids)
+
+    for username in users:
+        try:
+            body_bytes = ovpn_content.encode()
+            media = MediaInMemoryUpload(
+                body_bytes,
+                mimetype="application/x-openvpn-profile",
+                resumable=False,
+            )
+            existing_fid = file_ids.get(username, "").strip()
+            if existing_fid:
+                service.files().update(
+                    fileId=existing_fid,
+                    media_body=media,
+                ).execute()
+                print(f"[OVPN] Updated {username}.ovpn (Drive id: {existing_fid})")
+            else:
+                result = service.files().create(
+                    body={"name": f"{username}.ovpn", "parents": [folder_id]},
+                    media_body=media,
+                    fields="id",
+                ).execute()
+                new_fid = result.get("id", "")
+                updated_ids[username] = new_fid
+                print(f"[OVPN] Created {username}.ovpn (Drive id: {new_fid})")
+        except Exception as exc:
+            print(
+                f"[OVPN] ERROR uploading {username}.ovpn: "
+                f"{type(exc).__name__}: {str(exc)[:200]}",
+                file=sys.stderr,
+            )
+
+    _write_ovpn_file_ids(updated_ids)
+
+
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -201,6 +368,7 @@ def main() -> None:
         print(f"[LOCAL] IP changed: {old_ip} -> {ip}")
     write_local_ip(ip)
     drive_update(ip)
+    ovpn_update(ip)
 
 
 if __name__ == "__main__":  # pragma: no cover
