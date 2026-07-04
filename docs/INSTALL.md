@@ -273,6 +273,78 @@ installer (Step 3) enables it so it **starts automatically on every boot**.
 /etc/pam.d/openvpn                ← PAM stack (password + TOTP)
 ```
 
+### Starting the server after installation or a reboot
+
+On a standard Linux server **you don't need to start anything manually**.
+Both components are enabled as systemd units and start automatically at
+every boot:
+
+| Component | systemd unit | Started by |
+|---|---|---|
+| VPN server | `openvpn-server@server.service` | boot (enabled in install Step 3) |
+| IP updater | `southvpn-ip-updater.timer` | boot (enabled in install Step 5), fires every 5 min |
+
+When you log in (any session — local or SSH), just verify they are up:
+
+```bash
+systemctl is-active openvpn-server@server     # → active
+systemctl is-active southvpn-ip-updater.timer # → active
+```
+
+If either prints `inactive` or `failed`, start it:
+
+```bash
+sudo systemctl start openvpn-server@server
+sudo systemctl start southvpn-ip-updater.timer
+```
+
+And if it doesn't come back after the next reboot, re-enable autostart:
+
+```bash
+sudo systemctl enable --now openvpn-server@server
+sudo systemctl enable --now southvpn-ip-updater.timer
+```
+
+### Running under WSL (Windows Subsystem for Linux)
+
+WSL behaves differently from a normal Linux server in two important ways:
+
+**1. systemd is disabled by default.** Without it, none of the units above
+run and `systemctl` fails with *"System has not been booted with systemd"*.
+Enable it once:
+
+```bash
+# Inside WSL:
+sudo tee /etc/wsl.conf > /dev/null << 'EOF'
+[boot]
+systemd=true
+EOF
+```
+
+Then from Windows PowerShell:
+
+```powershell
+wsl --shutdown
+```
+
+Reopen the WSL terminal — `systemctl status openvpn-server@server` should
+now work, and the units start automatically whenever the WSL distro starts.
+
+**2. WSL only runs while a session is open.** The WSL virtual machine shuts
+down shortly after you close the last terminal window, taking the VPN server
+down with it. To keep the server alive, keep a WSL terminal open, or start
+the distro headless from Windows at logon:
+
+```powershell
+wsl --exec dbus-launch true
+```
+
+> **Note:** WSL is fine for testing the install and Drive sync flows, but as
+> a permanent VPN server it also needs Windows-side port proxying for
+> UDP 1194 and firewall rules on the Windows host. A dedicated Linux
+> machine (or VM with bridged networking) is strongly recommended for
+> production use.
+
 ### Common commands
 
 ```bash

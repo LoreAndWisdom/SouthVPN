@@ -51,6 +51,11 @@ sudo bash scripts/gen_client_config.sh alice /tmp/
 > **Security:** `add_user.sh` must be run directly on the server (local
 > terminal or non-VPN SSH).  It cannot be executed from inside a VPN session.
 
+The VPN server and the IP updater start automatically at the end of the
+install and on every boot — no manual start needed. To check, start, or stop
+them (including WSL-specific notes), see
+[Managing the VPN Server](docs/INSTALL.md#managing-the-vpn-server).
+
 ### Optional: Enable Google Drive sync
 
 ```bash
@@ -90,4 +95,4 @@ sudo bash tests/run_tests.sh --all
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT © 2026 Lorenzo Pigozzo — see [LICENSE](LICENSE).
